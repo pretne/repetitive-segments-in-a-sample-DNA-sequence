@@ -1,13 +1,13 @@
 #include <iostream>
-#include <fstream>
-#include <unordered_set>
 #include <vector>
-#include <string>
+#include <fstream>
+#include <unordered_map>
 #include <algorithm>
+#include <tuple>
 
 using namespace std;
 
-// 生成DNA互补碱基
+// DNA 碱基互补配对
 char complement(char base) {
     switch (base) {
         case 'A': return 'T';
@@ -27,83 +27,61 @@ string reverse_complement(const string& seq) {
     return rev_comp;
 }
 
-// 计算query中的连续重复子串，并在reference中查找
-void find_continuous_repeated_subsequences(const string& reference, const string& query) {
-    vector<tuple<int, int, int, string, int>> results; // 存储结果（位置, 长度, 频次, 是否逆转）
-    unordered_set<string> processed_substrings; // 存储已处理的子串
-    int q_len = query.size();
-    int match_len = 0; // 匹配长度
-
-    while (match_len < reference.size() && match_len < query.size() && reference[match_len] == query[match_len]) {
-        match_len++;
-    }
+// 在 query 中查找连续重复的匹配序列，并记录信息
+void analyze_repeats(const string &reference, const string &query) {
+    vector<tuple<int, int, int, bool>> results;
+    int ref_len = reference.size(), query_len = query.size();
     
-    // 计算query中的连续重复子串
-    for (int len = q_len / 2; len >= 2; --len) { // 子串最短为2
-        for (int i = 0; i + len * 2 <= q_len; ++i) {
-            string sub = query.substr(i, len);
-            if (processed_substrings.find(sub) != processed_substrings.end()) {
-                continue; // 跳过已处理的子串
+    vector<int> marked_next(query_len, -1); // 记录每个位置的下一个匹配位置
+    for(int len = 2; len <= ref_len; ++len) {
+        for(int i = 0; i <= ref_len - len; ++i) {
+            string sub_ref = reference.substr(i, len); // 参考序列片段
+            string rev_ref = reverse_complement(sub_ref); // 参考序列片段的逆转互补序列
+            
+            int j = i + len;
+            while(j < query_len && marked_next[j] != -1 && marked_next[j] < query_len) { // 跳过已标记的重复序列
+                j = marked_next[j];
+            }
+            if(j + len > query_len) {
+                continue; // 超出 query 长度
+            }
+            string sub = query.substr(j, len); // 查询序列片段
+            if(sub != sub_ref && sub != rev_ref) { // 片段不匹配
+                continue;
             }
             int repeat_count = 1;
-            int j = i + len;
-            
-            // 计算连续重复次数
-            while (j + len <= q_len && query.substr(j, len) == sub) {
-                // if(j == 600 && len == 70) {
-                //     cout << "sub: " << sub << endl << repeat_count << endl;
-                // }
+
+            while(j + len * 2 <= query_len && query.substr(j + len, len) == sub && (ref_len < j + len * 2 || reference.substr(j + len, len) != sub)) {
                 repeat_count++;
                 j += len;
             }
 
-            if (repeat_count > 1) { // 至少出现两次才算重复
-                // 在reference中查找
-                size_t ref_pos = reference.find(sub);
-                string rev_comp = reverse_complement(sub);
-                size_t rev_pos = reference.find(rev_comp);
-                
-                if (ref_pos != string::npos) {
-                    if(ref_pos == i) {
-                        repeat_count--; // 减去匹配位置之前的重复次数
-                        i += len; // 跳过重复子串
-                    }
-                    results.emplace_back(ref_pos, len, repeat_count, "no", i);
-                    i = j - 1;
-                } else if (rev_pos != string::npos) {
-                    results.emplace_back(rev_pos, len, repeat_count, "yes", i);
-                    i = j - 1;
+            if(repeat_count > 1) {
+                marked_next[i + len] = j + len;
+
+                if(sub == sub_ref) {
+                    results.emplace_back(i + len, len, repeat_count, false);
+                } else {
+                    results.emplace_back(i + len, len, repeat_count, true);
                 }
-                
-                // 标记已处理的子串
-                processed_substrings.insert(sub);
-                processed_substrings.insert(rev_comp);
+                i = j - 1;
             }
         }
     }
-    
-    // 按位置升序排序，如果位置相同，按长度升序排序
+
+    //按位置升序排序，如果位置相同，按长度升序排序
     sort(results.begin(), results.end(), [](const auto& a, const auto& b) {
-        if (get<0>(a) + get<1>(a) != get<0>(b) + get<1>(b)) {
-            return get<0>(a) + get<1>(a) < get<0>(b) + get<1>(b); // 按 reference 位置升序
+        if (get<0>(a) != get<0>(b)) {
+            return get<0>(a) < get<0>(b); // 按 reference 位置升序
         }
         return get<1>(a) < get<1>(b); // 位置相同时，按长度升序
     });
 
-    // 输出排序后的结果
-    for (const auto& res : results) {
-        if (get<0>(res) + get<1>(res) < 400) {
-            continue; // 跳过匹配位置之前的结果
-        }
-        cout << get<0>(res) + get<1>(res) << " " << get<1>(res) << " " << get<2>(res) << " " << get<3>(res) << " " << get<4>(res) << endl;
-        for (int i = get<0>(res); i < get<0>(res) + get<1>(res); ++i) {
-            cout << reference[i];
-        }
-        cout << endl;
-        for (int i = get<4>(res); i < get<4>(res) + get<1>(res) * get<2>(res); ++i) {
-            cout << query[i];
-        }
-        cout << endl;
+    for(const auto & res : results) {
+        cout << "Position: " << get<0>(res)
+             << ", Sequence Length: " << get<1>(res)
+             << ", Repeat Count: " << get<2>(res)
+             << ", Is Reversed: " << (get<3>(res) ? "Yes" : "No") << endl;
     }
 }
 
@@ -120,6 +98,7 @@ int main() {
     getline(inputFile, query);
     inputFile.close();
     
-    find_continuous_repeated_subsequences(reference, query);
+    analyze_repeats(reference, query);
+    
     return 0;
 }
