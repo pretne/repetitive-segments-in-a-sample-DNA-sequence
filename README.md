@@ -1,1 +1,0 @@
-# repetitive-segments-in-a-sample-DNA-sequence
